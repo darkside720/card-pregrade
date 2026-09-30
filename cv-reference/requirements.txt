@@ -1,0 +1,5 @@
+# Pinned for reproducibility. Install ONLY into the project-local .venv.
+# Not yet installed/verified on the dev machine (Phase 2).
+numpy==2.2.6
+opencv-python-headless==4.11.0.86
+pytest==8.3.5

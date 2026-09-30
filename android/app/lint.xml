@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<lint>
+    <!--
+        Lint suggests moving the adaptive icon from mipmap-anydpi-v26 to mipmap-anydpi because
+        minSdk is 26, but with AGP 8.7.3 / AAPT2 that move makes resource linking fail
+        ("resource mipmap/ic_launcher not found"; verified in Phase 2). Keep -v26 until the
+        AGP upgrade, then re-evaluate.
+    -->
+    <issue id="ObsoleteSdkInt">
+        <ignore path="src/main/res/mipmap-anydpi-v26" />
+    </issue>
+</lint>

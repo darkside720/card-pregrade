@@ -1,0 +1,79 @@
+# ---------------------------------------------------------------
+# Secrets & credentials — never commit
+# ---------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.jks
+*.keystore
+*.p12
+*.pem
+*.key
+keystore.properties
+signing.properties
+secrets.properties
+credentials.json
+*credentials*
+service-account*.json
+google-services.json
+GoogleService-Info.plist
+.aws/
+*.tfvars
+!*.tfvars.example
+*.tfstate
+*.tfstate.*
+.terraform/
+
+# ---------------------------------------------------------------
+# Android / Gradle
+# ---------------------------------------------------------------
+local.properties
+.gradle/
+build/
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+*.ap_
+*.dex
+output-metadata.json
+
+# ---------------------------------------------------------------
+# IDE state
+# ---------------------------------------------------------------
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+.kotlin/
+
+# ---------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# ---------------------------------------------------------------
+# Images / data — card photos are personal data and may be copyrighted.
+# Only intentionally-added synthetic fixtures are tracked.
+# ---------------------------------------------------------------
+test-data/**/*.jpg
+test-data/**/*.jpeg
+test-data/**/*.png
+test-data/**/*.heic
+test-data/**/*.dng
+!test-data/synthetic/**/*.png
+debug-output/
+calibration-output/
+*.tmp
+tmp/
