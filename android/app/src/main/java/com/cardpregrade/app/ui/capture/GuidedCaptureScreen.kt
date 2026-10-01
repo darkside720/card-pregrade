@@ -43,7 +43,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -321,8 +320,10 @@ private fun ReviewPanel(
     onAccept: (override: Boolean) -> Unit,
     onRetake: () -> Unit,
 ) {
-    val bitmap by produceState<ImageBitmap?>(null, image.localUri) {
-        value = withContext(Dispatchers.IO) {
+    // Expanded form of keyed produceState, which AGP 8.7 lint misreports as ProduceStateDoesNotAssignValue.
+    var bitmap by remember { mutableStateOf<ImageBitmap?>(null) }
+    LaunchedEffect(image.localUri) {
+        bitmap = withContext(Dispatchers.IO) {
             runCatching { OrientedBitmapLoader.load(resolveFile(image.localUri), image.orientation, 1600)?.asImageBitmap() }.getOrNull()
         }
     }

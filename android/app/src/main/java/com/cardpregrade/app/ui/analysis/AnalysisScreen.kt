@@ -14,8 +14,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.produceState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -40,8 +43,10 @@ private val stages = listOf(
 
 @Composable
 fun AnalysisScreen(container: AppContainer, sessionId: String, onBack: () -> Unit, onViewDemo: () -> Unit, onHome: () -> Unit) {
-    val photoCount by produceState<Int?>(null, sessionId) {
-        value = container.scanRepository.getSession(sessionId)?.captures?.size ?: 0
+    // Expanded form of keyed produceState, which AGP 8.7 lint misreports as ProduceStateDoesNotAssignValue.
+    var photoCount by remember { mutableStateOf<Int?>(null) }
+    LaunchedEffect(sessionId) {
+        photoCount = container.scanRepository.getSession(sessionId)?.captures?.size ?: 0
     }
     AppScaffold(title = "Analysis", screenTag = "screen_analysis", onBack = onBack) { padding ->
         ScrollingContent(padding) {
