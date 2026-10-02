@@ -68,7 +68,8 @@ only implemented where reliable; everything else is labelled *Not checked* or *E
 - **MVVM**: each screen has a ViewModel exposing `StateFlow` UI state; Composables are
   stateless renderers. Coroutines/Flow throughout.
 - **Room** for local persistence (schema exported to `core/data/schemas/` for migration checks).
-- **Manual DI** (`AppContainer`) until the graph grows (CameraX, OpenCV) — then Hilt.
+- **Manual DI** (`AppContainer`, which also supplies the camera source and permission handler so
+  tests can swap in fakes) until the graph grows (OpenCV, pipeline implementations) — then Hilt.
 - `minSdk 26`, `targetSdk/compileSdk 35`, JDK 17 toolchain.
 
 ### Modules
@@ -77,7 +78,7 @@ only implemented where reliable; everything else is labelled *Not checked* or *E
 |---|---|---|---|
 | `:app` | Android app | Screens, navigation, ViewModels, demo data, orchestration | all core |
 | `:core:model` | Kotlin/JVM | Domain models (Card, ScanSession, CapturedImage, ImageQualityResult, CardDefect, InspectionResult, ProfessionalGrade, PredictionComparison, grades, confidence) | — |
-| `:core:cv` | Kotlin/JVM | Analyzer interfaces, `InspectionPipeline`, diagnostics model, deterministic geometry (`Quadrilateral`, `CardRegions`, `CoordinateMapper`), `ImageQualityGate` | model |
+| `:core:cv` | Kotlin/JVM | Analyzer interfaces, `InspectionPipeline`, diagnostics model, deterministic geometry (`Quadrilateral`, `CardRegions`, `CoordinateMapper`), `CaptureQualityAnalyzer` | model |
 | `:core:grading` | Kotlin/JVM | `GradeEstimator`, `GradingRuleSet`, `ConfidenceCalculator`, `CandidateAssessor` | model |
 | `:core:data` | Android lib | Room entities/DAOs/DB, repository interfaces + Room implementations, `LocalDataSources` | model |
 
@@ -85,21 +86,37 @@ Pure-JVM modules keep domain logic free of Android types → fast unit tests and
 to a backend or iOS port. Room is an implementation detail of `:core:data`; `:app` only sees
 repository interfaces.
 
-### Screens (Phase 2)
+### Screens (Phase 3)
 
-Home · New Scan · Guided Capture (camera placeholder + card guide overlay + retake flow) ·
-Analysis (honest "no analysis was run") · Results (DEMO/MOCK) · Saved Scans (Room-backed) ·
-Settings/About · Developer Calibration (behind developer toggle).
+Home · New Scan · Guided Capture (CameraX preview + card guide overlay, four-step protocol,
+capture-quality review, accept/override/retake, resume) · Analysis (honest "no analysis was
+run") · Results (DEMO/MOCK sample data, banner + persistent DEMO badge) · Saved Scans
+(Room-backed; reopens a capture session) · Settings/About · Developer Calibration (real
+captures and capture-quality measurements; behind developer toggle).
+
+### Capture → results flow (as implemented)
+
+```
+capture → JPEG saved to scans/<session>/pending/ → CaptureInspector
+  (EXIF + CaptureQualityAnalyzer on a 1024 px downscale) → review
+  → accept (override if not GOOD) → file promoted to scans/<session>/<step>.jpg + Room row
+  → all 4 accepted → "Continue to analysis" → Analysis screen ("No analysis was run")
+  → optional "View demo result layout" → Results with the fixed DemoInspection sample
+```
+
+Captured images are never passed to `:core:grading` or to any card analyzer; the Results
+screen has no access to the session.
 
 ## 6. Computer-vision pipeline
 
-Contracts live in `:core:cv` (`analyzers/Analyzers.kt`). Each stage stamps an
-`AlgorithmVersion` on its output.
+**Status: design only.** None of the stages below is implemented yet; the only image
+processing that runs is the capture-quality check in §7. Contracts live in `:core:cv`
+(`analyzers/Analyzers.kt`). Each stage stamps an `AlgorithmVersion` on its output.
 
 ```
 CapturedImage
   → CardDetector            (quad outline or NotDetected)
-  → ImageQualityAnalyzer    (scores) → ImageQualityGate (accept / warn / retake)
+  → ImageQualityAnalyzer    (card-level scores: coverage, perspective, glare → accept / warn / retake)
   → PerspectiveCorrector    (upright 63:88 image, known px/mm)
   → ImageNormalizer         (exposure / white balance)
   → CenteringAnalyzer       (Measured borders or Unknown)
@@ -125,19 +142,33 @@ CapturedImage
 - **Local vs remote:** `InspectionPipeline.processingMode` distinguishes on-device
   (`LOCAL_ONLY`) from a future backend implementation (`CLOUD_ANALYSIS`) behind the same contract.
 
-## 7. Image-quality gate
+## 7. Capture-quality check (implemented, Phase 3)
 
-`ImageQualityResult` (per photo) carries `blurScore, glareScore, exposureScore,
-resolutionScore, cardCoverageScore, perspectiveScore` (0..1, **1 = ideal**, `null` = not
-measured), `acceptable`, and typed `warnings` (blocking or degrading).
+`CaptureQualityAnalyzer` (`:core:cv`), called from the app's `CaptureInspector`, measures the
+**photograph**, not the card. No card detection runs, so it uses the central 60 % of a
+1024 px-long-side luminance downscale:
 
-- `ImageQualityGate` applies per-metric thresholds: below *block* → retake required; below
-  *warn* → accepted with lowered confidence. Thresholds are **provisional placeholders** until
-  calibrated in Phase 4.
-- The capture flow (`CaptureFlowState`) never advances past a rejected photo.
-- `ConservativeConfidenceCalculator` caps overall confidence when any photo is unacceptable,
-  required captures are missing, or centering is unknown.
+| Check | Measure | Effect |
+|---|---|---|
+| Resolution | Short side in px | < 720 px → UNUSABLE; lower bands → retake recommended / warning |
+| Sharpness | Laplacian variance | Retake recommended / warning |
+| Exposure | Mean luma | Too dark / too bright → retake recommended / warning |
+| Highlight clipping | Fraction of pixels ≥ 250 | Possible glare → retake recommended / warning |
+| Decode | JPEG unreadable | UNUSABLE |
+
+- Results are stored per photo as `ImageQualityResult` with per-metric `QualityCheck`s
+  (0..1 scores where measured; `null` = not measured).
+- Only UNUSABLE photos are blocked (retake only). WARNING / RETAKE_RECOMMENDED photos can be
+  accepted with an explicit override, which is recorded on the image (`qualityOverridden`).
+  The flow cannot complete while a step has no accepted photo.
+- Thresholds are **provisional and uncalibrated**.
 - A model invariant forbids `acceptable = true` with a blocking warning.
+
+**Capture quality is not card grading.** These checks decide whether a photo is usable for the
+capture workflow. They do not evaluate card condition and currently feed nothing downstream:
+no PSA/BGS estimate, centering, corner, edge, surface, defect or confidence value depends on
+them. (`ConservativeConfidenceCalculator` is designed to cap confidence when photos are
+unacceptable, but it is not wired into any production flow yet.)
 
 ## 8. Defect representation
 
@@ -172,8 +203,10 @@ processing mode, `isDemo`).
 
 ## 10. Persistence
 
-Room schema v1 tables: `cards, scan_sessions, captured_images, inspection_results,
-card_defects, professional_grades, prediction_comparisons`. Enums by name, times as epoch
+Room schema v2 tables: `cards, scan_sessions, captured_images, image_quality_checks,
+inspection_results, card_defects, professional_grades, prediction_comparisons` (v1 → v2 added
+capture metadata and per-metric quality checks). Phase 3 writes only sessions, cards, captures
+and quality checks; no inspection results exist. Enums by name, times as epoch
 millis, grades as half-points, algorithm/pipeline versions on every analysis row. The full
 result payload column is reserved until a serialization format is chosen in Phase 4.
 Demo results are rejected by `InspectionRepository.save`.

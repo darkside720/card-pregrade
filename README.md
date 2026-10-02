@@ -4,9 +4,10 @@
 collectors *estimate* how a Pokémon or One Piece TCG card might grade, using guided,
 high-resolution photographs.
 
-> **Not an official grade.** Results are estimates based on photographs and are not official
-> PSA, BGS, CGC, or other professional grading results. Professional in-person inspection may
-> detect defects that photographs cannot.
+> **Not an official grade.** In the current Phase 3 build, Results are DEMO / MOCK sample data
+> and are not derived from captured photographs. Future analysis results will be estimates
+> rather than official grades. Professional in-person inspection may detect defects that
+> photographs cannot.
 
 ## Status
 
@@ -15,13 +16,20 @@ high-resolution photographs.
 | 0 | Discovery | Done |
 | 1 | Architecture, docs, ADRs, data models, CV interfaces | Done |
 | 2 | Buildable Android skeleton: navigation, 7 screens, mock result, test scaffolding | Done |
-| 3 | CameraX capture, guide overlay, retake, basic quality gate | **Not started** |
+| 3 | CameraX capture, guide overlay, retake, capture-quality checks | Done (validated on a Google Pixel 8 Pro, Android 17 / API 37) |
 | 4 | CardDetector, PerspectiveCorrector, ImageQualityAnalyzer, CenteringAnalyzer | Not started |
 | 5 | Corner / Edge / Whitening analysis | Not started |
 | 6 | Rule-based pre-grade (PSA / BGS ranges) | Not started |
 
-Nothing is analysed yet. The only grade shown in the app is a clearly-labelled
-**DEMO / MOCK ANALYSIS** used to evaluate the results UX.
+**What works today:** guided four-photo capture with CameraX (front straight, back straight,
+front angled left, front angled right), stored in app-private storage and persisted with Room,
+plus technical *capture-quality* checks (resolution, sharpness, exposure, highlight clipping)
+that decide whether a photo is usable.
+
+**What does not exist yet:** any analysis of the card itself — no card-condition computer
+vision, no centering measurement, no corner/edge/surface defect detection, no ML, and no grade
+calculation. The Results screen shows clearly labelled **DEMO / MOCK** sample data; none of its
+values are derived from your photographs. See [docs/limitations.md](docs/limitations.md).
 
 ## Repository layout
 
@@ -102,10 +110,12 @@ Use the project-local `.venv` only; do not install OpenCV/numpy globally.
 
 ## Principles
 
-- **Estimates, not grades.** Ranges (e.g. "PSA 9–10"), never false precision (no "9.73").
+- **Estimates, not grades.** Grading-company estimates are ranges (e.g. "PSA 9–10"), never false
+  precision (no "PSA 9.73"). A future continuous condition score (e.g. "9.7 / 10") is a separate
+  concept and is not a probability of any grade; see [docs/grading-methodology.md](docs/grading-methodology.md).
 - **Don't fabricate.** Unmeasurable values are reported as *Unknown*; bad photos lower confidence or trigger a retake.
 - **Deterministic first.** Geometry and image processing where objectively measurable; ML only when real graded-card data exists.
-- **Local first.** Photos stay on the device. No network permission in the current build. Any future upload requires explicit per-scan consent.
+- **Local first.** Photos stay in app-private storage on the device. The current build does not request the `INTERNET` permission and has no upload path. Any future upload requires explicit per-scan consent.
 - **Reproducible.** Every result records the algorithm/pipeline versions that produced it.
 
 ## Security

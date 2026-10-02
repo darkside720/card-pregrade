@@ -9,6 +9,9 @@ exists.
 
 No model is trained in the MVP. No model is trained on synthetic or invented grade labels.
 
+**Current build (Phase 3):** no ML library (TensorFlow Lite/LiteRT, ML Kit, ONNX, PyTorch,
+OpenCV models) is a dependency, no model files are bundled, and no inference runs.
+
 ## Candidate uses (in likely order)
 
 | Use | Why ML might help | Labels needed | Earliest |

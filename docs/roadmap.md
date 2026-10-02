@@ -12,16 +12,27 @@ Docs, ADRs, domain models, CV/grading/data interfaces.
 Multi-module Gradle project, Compose navigation, 7 screens + calibration, DEMO/MOCK results UI,
 Room schema, unit + instrumented test scaffolding.
 
-## Phase 3 — Camera MVP (next)
-- CameraX Preview + ImageCapture at max resolution; tap-to-focus, exposure lock, torch toggle.
-- `CAMERA` permission flow with rationale.
-- Card guide overlay on the live preview (reuse `cardGuideRect`).
-- Front, back, left-light, right-light capture steps; retake; per-step review.
-- Save to app-private storage; persist `CapturedImage` with `DeviceMetadata` (Camera2 interop
-  for ISO/exposure/focal length).
-- Basic quality gate: resolution check and Laplacian-variance blur on a downscaled frame
-  (warn-only until calibrated), wired to `CaptureFlowState` rejection.
-- Instrumented tests using a fake camera/image source.
+## Phase 3 — Camera MVP ✅
+Delivered:
+- CameraX rear-camera Preview + ImageCapture at the highest available resolution
+  (maximize-quality mode); tap-to-focus, exposure compensation and torch toggle.
+- Runtime `CAMERA` permission flow with rationale and a permanently-denied path.
+- Card guide overlay on the live preview (`cardGuideRect`).
+- Four-step protocol — front straight, back straight, front angled left, front angled right —
+  with per-step review, accept, retake, and resume of an interrupted session.
+- Capture lifecycle in app-private storage: `pending/` candidate → accepted file per step;
+  `CapturedImage` + EXIF/device metadata (ISO, exposure time, focal length, orientation)
+  persisted in Room.
+- Capture-quality checks (`CaptureQualityAnalyzer`): resolution, sharpness (Laplacian variance),
+  exposure and highlight clipping on a 1024 px downscale. Only undecodable or far-too-low
+  resolution photos are blocking; other problems need an explicit, recorded user override.
+  Thresholds are provisional.
+- Calibration screen shows real accepted captures and their capture-quality measurements.
+- Instrumented tests using a fake camera source.
+- Hardware validation on a Google Pixel 8 Pro (Android 17 / API 37): a real four-photo session
+  produced four 4080 × 3072 JPEGs.
+
+Not part of Phase 3: exposure *lock* (only compensation), any card analysis, any grading.
 
 ## Phase 4 — CV foundation
 - `:core:cv-opencv` module (OpenCV Android SDK via Maven).
@@ -42,6 +53,9 @@ Room schema, unit + instrumented test scaffolding.
 - First provisional `GradingRuleSet` (centering from published tolerances; others provisional).
 - PSA and BGS ranges with limiting factors; candidate indicators.
 - Professional-grade entry UI and `PredictionComparison` recording.
+- Target result presentation (continuous condition score, grading-company range, 10-candidate
+  assessment, distance to next grade, limiting factors) is described in
+  [grading-methodology.md](grading-methodology.md#future-grading-presentation-design-not-implemented).
 
 ## Later
 - Surface analysis from multi-angle captures (experimental).

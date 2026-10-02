@@ -9,14 +9,19 @@
 
 `ProcessingMode` is stored on every `ScanSession` and in every result's provenance.
 
-## Guarantees in the current build
+## Current implementation
 
-- The manifest declares **no `INTERNET` permission**, so the app cannot upload anything.
-- **No `CAMERA` permission yet** (CameraX arrives in Phase 3).
+- **`CAMERA`** is the only dangerous permission. It is requested at runtime, only when the
+  guided capture screen needs it.
+- **Photos are stored in app-private storage** (`<filesDir>/scans/<sessionId>/`), not the
+  shared gallery. Session and capture metadata (including EXIF-derived camera settings) are
+  stored in the app's local Room database. The app has no export feature.
+- **No `INTERNET` permission** is declared, so the app cannot open network connections.
+- **No upload path exists.** The capture and results workflow contains no HTTP/REST/GraphQL
+  client, AWS or Firebase SDK, analytics or crash-reporting SDK, or remote ML service.
+  Photographs are not uploaded.
 - `allowBackup="false"` and data-extraction rules exclude all app data from cloud backup and
   device-to-device transfer.
-- Photos (from Phase 3) will be written to app-private storage, not the shared gallery,
-  unless the user explicitly exports them.
 
 ## Rules for any future cloud feature
 
