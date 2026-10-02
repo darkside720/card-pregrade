@@ -1,7 +1,12 @@
 package com.cardpregrade.app
 
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotDisplayed
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -56,8 +61,22 @@ class NavigationSmokeTest {
 
         assertScreen("screen_results")
         rule.onNodeWithTag("demo_banner").assertIsDisplayed()
+        rule.onNodeWithTag("demo_badge").assertIsDisplayed()
         rule.onNodeWithText("DEMO / MOCK ANALYSIS").assertIsDisplayed()
         rule.onNodeWithText("Lugia 149/147").assertIsDisplayed()
+    }
+
+    @Test
+    fun demoBadgeStaysVisibleAfterBannerScrollsAway() {
+        clickText("View demo result")
+        assertScreen("screen_results")
+        rule.onNodeWithTag("demo_banner").assertIsDisplayed()
+        rule.onNodeWithTag("demo_badge").assertIsDisplayed()
+
+        rule.onNodeWithText("Not an official grade").performScrollTo()
+
+        rule.onNodeWithTag("demo_banner").assertIsNotDisplayed()
+        rule.onNodeWithTag("demo_badge").assertIsDisplayed()
     }
 
     @Test
@@ -73,6 +92,14 @@ class NavigationSmokeTest {
         clickText("View demo result")
         assertScreen("screen_results")
         clickText("Possible whitening")
+        // Evidence and Source both read "Demo sample"; no detector or source photo is exposed.
+        // Scoped to the dialog: the results screen behind it legitimately lists "back-straight" under Photo quality.
+        val inDialog = hasAnyAncestor(isDialog())
+        rule.onAllNodes(inDialog and hasText("Demo sample")).assertCountEquals(2)
+        rule.onNode(inDialog and hasText("(supported)", substring = true)).assertDoesNotExist()
+        rule.onNode(inDialog and hasText("Detector")).assertDoesNotExist()
+        rule.onNode(inDialog and hasText("Source photo")).assertDoesNotExist()
+        rule.onNode(inDialog and hasText("back-straight", substring = true)).assertDoesNotExist()
         rule.onNodeWithText("Close").assertIsDisplayed().performClick()
     }
 

@@ -1,11 +1,15 @@
 package com.cardpregrade.app.capture
 
 import android.os.Build
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onFirst
@@ -18,6 +22,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.cardpregrade.app.FakeCameraPermission
 import com.cardpregrade.app.MainActivity
 import com.cardpregrade.app.TestContainer
+import com.cardpregrade.app.camera.CameraSource
+import com.cardpregrade.app.camera.CaptureOutcome
 import com.cardpregrade.app.camera.FakeCameraSource
 import com.cardpregrade.app.camera.FakeScene
 import com.cardpregrade.app.camera.PermissionStatus
@@ -41,6 +47,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
+import java.util.concurrent.CopyOnWriteArrayList
 
 /**
  * Guided capture end to end with [FakeCameraSource] — no camera hardware involved.
@@ -105,7 +112,12 @@ class CaptureFlowInstrumentedTest {
         rule.waitForTag("capture_button")
         rule.clickTag("capture_button")
         rule.waitForTag("capture_error")
-        rule.onNodeWithTag("capture_error").assertTextContains("simulated camera error", substring = true)
+        rule.onNodeWithTag("capture_error").performScrollTo().assertIsDisplayed()
+        // The tag is on the Surface container; the message is a descendant Text node.
+        rule.onNode(hasAnyAncestor(hasTestTag("capture_error")) and hasText("simulated camera error", substring = true))
+            .performScrollTo()
+            .assertIsDisplayed()
+        rule.onNodeWithText("Step 1 of 4", substring = true).performScrollTo().assertIsDisplayed()
         rule.onNodeWithTag("status_FRONT_STRAIGHT", useUnmergedTree = true).assertTextContains("Not captured")
     }
 
@@ -125,16 +137,29 @@ class CaptureFlowInstrumentedTest {
 
     @Test
     fun retakeDiscardsCandidate() {
-        TestContainer.install(FakeCameraSource())
+        val fake = FakeCameraSource()
+        val camera = RecordingCameraSource(fake)
+        TestContainer.install(fake)
+        container.cameraSourceFactory = { camera }
         rule.startNewScan()
         rule.waitForTag("capture_button")
         rule.clickTag("capture_button")
         rule.waitForTag("retake_button")
+
+        // The app chose this target: <filesDir>/scans/<this session>/pending/<candidate>.jpg.
+        // Checking only this session keeps the test independent of other sessions on the device.
+        val candidate = camera.targets.single()
+        val pendingDir = candidate.parentFile!!
+        assertEquals("pending", pendingDir.name)
+        assertEquals(File(filesDir, "scans").canonicalFile, pendingDir.parentFile!!.parentFile!!.canonicalFile)
+        assertTrue("candidate should exist before retake", candidate.isFile)
+
         rule.clickTag("retake_button")
         rule.waitForTag("capture_button")
-        rule.waitUntil(5_000) {
-            File(filesDir, "scans").walkTopDown().none { it.parentFile?.name == "pending" && it.isFile }
-        }
+        rule.waitUntil(5_000) { !candidate.exists() && pendingDir.listFiles().orEmpty().none { it.isFile } }
+        rule.onNodeWithText("Step 1 of 4", substring = true).performScrollTo().assertIsDisplayed()
+        rule.onNodeWithTag("status_FRONT_STRAIGHT", useUnmergedTree = true).assertTextContains("Not captured")
+        rule.onNodeWithTag("capture_button").performScrollTo().assertIsEnabled()
     }
 
     @Test
@@ -270,5 +295,18 @@ class CaptureFlowInstrumentedTest {
         assertTrue(File(filesDir, "scans/${first.id}/front-straight.jpg").exists())
         assertTrue(File(filesDir, "scans/${second.id}/front-straight.jpg").exists())
         assertNotEquals(first.captures.single().id, second.captures.single().id)
+    }
+}
+
+/** Delegates to [fake] and records every capture target, which identifies the session the app wrote to. */
+private class RecordingCameraSource(private val fake: FakeCameraSource) : CameraSource by fake {
+    val targets: MutableList<File> = CopyOnWriteArrayList()
+
+    @Composable
+    override fun PreviewContent(modifier: Modifier) = fake.PreviewContent(modifier)
+
+    override suspend fun capture(target: File): CaptureOutcome {
+        targets += target
+        return fake.capture(target)
     }
 }

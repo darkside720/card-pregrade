@@ -37,6 +37,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.cardpregrade.app.demo.DemoInspection
 import com.cardpregrade.app.ui.components.AppScaffold
 import com.cardpregrade.app.ui.components.CardDiagram
+import com.cardpregrade.app.ui.components.DemoBadge
 import com.cardpregrade.app.ui.components.DemoBanner
 import com.cardpregrade.app.ui.components.DisclaimerCard
 import com.cardpregrade.app.ui.components.LabeledValue
@@ -69,9 +70,21 @@ class ResultsViewModel(resultId: String) : ViewModel() {
 @Composable
 fun ResultsScreen(resultId: String, onBack: () -> Unit) {
     val vm: ResultsViewModel = viewModel { ResultsViewModel(resultId) }
-    AppScaffold(title = "Pre-grade results", screenTag = "screen_results", onBack = onBack) { padding ->
+    val state = vm.state
+    // Driven by the data's provenance, not the route, so any demo result is labeled.
+    val isDemo = state is ResultsUiState.Loaded && state.result.provenance.isDemo
+    AppScaffold(
+        title = "Pre-grade results",
+        screenTag = "screen_results",
+        onBack = onBack,
+        titleBadge = if (isDemo) {
+            { DemoBadge() }
+        } else {
+            null
+        },
+    ) { padding ->
         ScrollingContent(padding) {
-            when (val s = vm.state) {
+            when (val s = state) {
                 ResultsUiState.NotFound -> Text("This result is not available.")
                 is ResultsUiState.Loaded -> ResultsContent(s.result)
             }
@@ -132,7 +145,7 @@ private fun ResultsContent(result: InspectionResult) {
         )
     }
     Text(
-        "Illustration only — a photo will appear here once capture is implemented. Tap a marker to zoom. " +
+        "Illustration only — part of the sample result layout; your photos are not shown or analyzed here. Tap a marker to zoom. " +
             "Dashed markers are experimental detections.",
         style = MaterialTheme.typography.bodySmall,
     )
@@ -273,8 +286,14 @@ private fun DefectZoomDialog(defect: CardDefect, isDemo: Boolean, onDismiss: () 
                 LabeledValue("Category", defect.category.label())
                 LabeledValue("Severity", defect.severity.label())
                 LabeledValue("Confidence", defect.confidence.label())
-                LabeledValue("Detector", "${defect.algorithmVersion} (${defect.maturity.label().lowercase()})")
-                LabeledValue("Source photo", defect.sourceImageId.removePrefix("demo-"))
+                // A demo defect was never detected in any photo, so don't present detector evidence or a source photo.
+                if (isDemo) {
+                    LabeledValue("Evidence", "Demo sample")
+                    LabeledValue("Source", "Demo sample")
+                } else {
+                    LabeledValue("Detector", "${defect.algorithmVersion} (${defect.maturity.label().lowercase()})")
+                    LabeledValue("Source photo", defect.sourceImageId.removePrefix("demo-"))
+                }
                 TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) { Text("Close") }
             }
         }

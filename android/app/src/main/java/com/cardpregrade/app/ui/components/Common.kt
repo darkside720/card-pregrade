@@ -28,6 +28,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
 const val PRODUCT_TAGLINE = "TCG Card Pre-Grading / Visual Inspection tool"
@@ -43,13 +44,24 @@ fun AppScaffold(
     title: String,
     screenTag: String,
     onBack: (() -> Unit)?,
+    /** Optional small marker shown after the title; stays visible while the content scrolls. */
+    titleBadge: (@Composable () -> Unit)? = null,
     content: @Composable (PaddingValues) -> Unit,
 ) {
     Scaffold(
         modifier = Modifier.testTag(screenTag),
         topBar = {
             TopAppBar(
-                title = { Text(title) },
+                title = {
+                    if (titleBadge == null) {
+                        Text(title)
+                    } else {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                            titleBadge()
+                        }
+                    }
+                },
                 navigationIcon = {
                     if (onBack != null) {
                         IconButton(onClick = onBack) {
@@ -108,6 +120,24 @@ fun DemoBanner(modifier: Modifier = Modifier) {
                 )
             }
         }
+    }
+}
+
+/** Compact top-bar companion to [DemoBanner], so demo data stays labeled after the banner scrolls away. */
+@Composable
+fun DemoBadge(modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier.testTag("demo_badge"),
+        color = MaterialTheme.colorScheme.error,
+        contentColor = MaterialTheme.colorScheme.onError,
+        shape = MaterialTheme.shapes.small,
+    ) {
+        Text(
+            "DEMO",
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+        )
     }
 }
 
