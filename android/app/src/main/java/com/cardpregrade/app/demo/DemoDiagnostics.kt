@@ -10,9 +10,10 @@ import com.cardpregrade.core.model.CardEdge
 import com.cardpregrade.core.model.CardSide
 
 /**
- * Card-analysis stage descriptors for the calibration screen. None of these stages is
- * implemented yet; the only drawn output is the deterministic crop geometry from :core:cv,
- * which shows *where* crops will be taken, not analysis results.
+ * Card-analysis stage descriptors for the calibration screen. Only boundary detection exists, as
+ * experimental per-capture developer diagnostics; the other stages are not implemented. The only
+ * drawn output here is the deterministic crop geometry from :core:cv, which shows *where* crops
+ * will be taken, not analysis results.
  */
 object DemoDiagnostics {
     private const val CORNER_FRACTION = 0.1
@@ -23,7 +24,11 @@ object DemoDiagnostics {
         pipelineVersion = "not implemented (Phase 4+)",
         stages = listOf(
             StageDiagnostics(DiagnosticStage.ORIGINAL, side, emptyList(), note = "Real accepted captures are shown above."),
-            StageDiagnostics(DiagnosticStage.DETECTED_BOUNDARY, side, emptyList(), note = "CardDetector not implemented (Phase 4)."),
+            StageDiagnostics(
+                DiagnosticStage.DETECTED_BOUNDARY, side, emptyList(),
+                note = "Experimental boundary detection runs on each accepted capture above (developer diagnostics only). " +
+                    "No later stage uses it yet.",
+            ),
             StageDiagnostics(DiagnosticStage.PERSPECTIVE_CORRECTED, side, emptyList(), note = "PerspectiveCorrector not implemented (Phase 4)."),
             StageDiagnostics(DiagnosticStage.CENTERING_LINES, side, emptyList(), note = "CenteringAnalyzer not implemented (Phase 4)."),
             StageDiagnostics(
