@@ -104,13 +104,27 @@ object OrientedBitmapLoader {
         var sample = 1
         while (max(bounds.outWidth, bounds.outHeight) / (sample * 2) >= maxLongSide) sample *= 2
         val decoded = BitmapFactory.decodeFile(file.path, BitmapFactory.Options().apply { inSampleSize = sample }) ?: return null
-        if (orientation.rotationDegrees == 0 && !orientation.mirrored) return decoded
+        return orient(decoded, orientation)
+    }
+
+    /**
+     * Applies [orientation] to stored pixels, recycling [stored] when a new bitmap is produced.
+     * Quarter-turn rotations keep dimensions exact.
+     *
+     * The clockwise rotation comes first, then the horizontal mirror, which is the order
+     * [ImageOrientation.fromExif]'s mapping needs: EXIF 5 (transpose, (x, y) → (y, x)) is rotate
+     * 90° then mirror, and EXIF 7 (transverse, (x, y) → (−y, −x)) is rotate 270° then mirror.
+     * Mirroring first would swap those two (a 180° error). EXIF 2 and 4 are unaffected because a
+     * mirror commutes with 0° and 180°.
+     */
+    fun orient(stored: Bitmap, orientation: ImageOrientation): Bitmap {
+        if (orientation.rotationDegrees == 0 && !orientation.mirrored) return stored
         val matrix = Matrix().apply {
-            if (orientation.mirrored) postScale(-1f, 1f)
             postRotate(orientation.rotationDegrees.toFloat())
+            if (orientation.mirrored) postScale(-1f, 1f)
         }
-        return Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, matrix, true).also {
-            if (it !== decoded) decoded.recycle()
+        return Bitmap.createBitmap(stored, 0, 0, stored.width, stored.height, matrix, true).also {
+            if (it !== stored) stored.recycle()
         }
     }
 }
