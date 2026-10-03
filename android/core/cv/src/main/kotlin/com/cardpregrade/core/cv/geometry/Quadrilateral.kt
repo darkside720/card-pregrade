@@ -5,7 +5,14 @@ import kotlin.math.acos
 import kotlin.math.hypot
 import kotlin.math.sign
 
-/** A point in source-image pixel coordinates (origin top-left, y down). */
+/**
+ * A point in continuous image pixel coordinates (origin at the image's top-left corner, y down).
+ *
+ * An image of W × H pixels spans [0, W] × [0, H]. Pixel (i, j) covers the half-open square
+ * [i, i+1) × [j, j+1), and its centre is (i + 0.5, j + 0.5). Integer coordinates are pixel
+ * *corners*, not pixel centres (unlike the convention common in OpenCV). Samplers evaluate at
+ * pixel centres; area membership uses the half-open rule.
+ */
 data class PixelPoint(val x: Double, val y: Double) {
     fun distanceTo(other: PixelPoint): Double = hypot(x - other.x, y - other.y)
 }
@@ -13,6 +20,8 @@ data class PixelPoint(val x: Double, val y: Double) {
 /**
  * A card outline in a source photograph with corners in a fixed, known order.
  * Detectors return arbitrary point order; [fromUnordered] canonicalizes it.
+ * Corners use the continuous [PixelPoint] convention: an outline covering a whole W × H image
+ * has corners (0, 0), (W, 0), (W, H), (0, H).
  */
 data class Quadrilateral(
     val topLeft: PixelPoint,
