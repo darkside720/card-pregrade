@@ -32,14 +32,6 @@ data class SyntheticCardSpec(
     val bottomBorder: Int get() = cardRect.bottom - artRect.bottom
 }
 
-/** A simple ARGB raster, row-major. */
-class ArgbRaster(val width: Int, val height: Int, val pixels: IntArray = IntArray(width * height)) {
-    operator fun get(x: Int, y: Int): Int = pixels[y * width + x]
-    operator fun set(x: Int, y: Int, argb: Int) {
-        pixels[y * width + x] = argb
-    }
-}
-
 object SyntheticCard {
     fun render(spec: SyntheticCardSpec): ArgbRaster {
         val raster = ArgbRaster(spec.canvasWidth, spec.canvasHeight)

@@ -1,9 +1,18 @@
 package com.cardpregrade.core.cv.geometry
 
 import kotlin.math.abs
+import kotlin.math.acos
 import kotlin.math.hypot
+import kotlin.math.sign
 
-/** A point in source-image pixel coordinates (origin top-left, y down). */
+/**
+ * A point in continuous image pixel coordinates (origin at the image's top-left corner, y down).
+ *
+ * An image of W × H pixels spans [0, W] × [0, H]. Pixel (i, j) covers the half-open square
+ * [i, i+1) × [j, j+1), and its centre is (i + 0.5, j + 0.5). Integer coordinates are pixel
+ * *corners*, not pixel centres (unlike the convention common in OpenCV). Samplers evaluate at
+ * pixel centres; area membership uses the half-open rule.
+ */
 data class PixelPoint(val x: Double, val y: Double) {
     fun distanceTo(other: PixelPoint): Double = hypot(x - other.x, y - other.y)
 }
@@ -11,6 +20,8 @@ data class PixelPoint(val x: Double, val y: Double) {
 /**
  * A card outline in a source photograph with corners in a fixed, known order.
  * Detectors return arbitrary point order; [fromUnordered] canonicalizes it.
+ * Corners use the continuous [PixelPoint] convention: an outline covering a whole W × H image
+ * has corners (0, 0), (W, 0), (W, H), (0, H).
  */
 data class Quadrilateral(
     val topLeft: PixelPoint,
@@ -22,6 +33,14 @@ data class Quadrilateral(
 
     /** Polygon area via the shoelace formula. */
     val area: Double
+        get() = abs(signedArea)
+
+    /**
+     * Shoelace area with sign. In image coordinates (y down) the TL → TR → BR → BL convention
+     * runs clockwise on screen and gives a **positive** value; a negative value means the
+     * corners are wound the other way. Meaningless for self-intersecting outlines.
+     */
+    val signedArea: Double
         get() {
             val p = points
             var sum = 0.0
@@ -30,21 +49,60 @@ data class Quadrilateral(
                 val b = p[(i + 1) % p.size]
                 sum += a.x * b.y - b.x * a.y
             }
-            return abs(sum) / 2.0
+            return sum / 2.0
         }
 
-    /** True if all turns have the same sign, i.e. the outline is convex and non-self-intersecting. */
+    /** Side lengths in order top (TL–TR), right (TR–BR), bottom (BR–BL), left (BL–TL). */
+    val sideLengths: List<Double>
+        get() = points.indices.map { i -> points[i].distanceTo(points[(i + 1) % 4]) }
+
+    /**
+     * Interior angles in degrees at TL, TR, BR, BL. A reflex vertex of a concave outline is
+     * reported as > 180°, so a simple (non-self-intersecting) quadrilateral sums to 360°.
+     * A vertex with a zero-length adjacent side yields NaN. Not meaningful for self-intersecting
+     * outlines.
+     */
+    val interiorAnglesDeg: List<Double>
+        get() {
+            val p = points
+            val orientation = sign(signedArea)
+            return p.indices.map { i ->
+                val prev = p[(i + 3) % 4]
+                val at = p[i]
+                val next = p[(i + 1) % 4]
+                val ax = prev.x - at.x
+                val ay = prev.y - at.y
+                val bx = next.x - at.x
+                val by = next.y - at.y
+                val lengths = hypot(ax, ay) * hypot(bx, by)
+                if (lengths == 0.0) return@map Double.NaN
+                val unsigned = Math.toDegrees(acos(((ax * bx + ay * by) / lengths).coerceIn(-1.0, 1.0)))
+                // Turn direction at this vertex; opposite to the outline's winding means reflex.
+                val turn = cross(at.x - prev.x, at.y - prev.y, next.x - at.x, next.y - at.y)
+                if (orientation != 0.0 && sign(turn) == -orientation) 360.0 - unsigned else unsigned
+            }
+        }
+
+    /** True if opposite sides cross each other (a "bow-tie", e.g. two corners swapped). */
+    val isSelfIntersecting: Boolean
+        get() = segmentsCross(topLeft, topRight, bottomRight, bottomLeft) ||
+            segmentsCross(topRight, bottomRight, bottomLeft, topLeft)
+
+    /**
+     * True if every turn is strictly positive or every turn is strictly negative, i.e. the outline
+     * is convex and non-self-intersecting (either winding). A zero turn (collinear corners) is
+     * not convex.
+     */
     val isConvex: Boolean
         get() {
             val p = points
-            val signs = p.indices.map { i ->
+            val turns = p.indices.map { i ->
                 val a = p[i]
                 val b = p[(i + 1) % 4]
                 val c = p[(i + 2) % 4]
-                val cross = (b.x - a.x) * (c.y - b.y) - (b.y - a.y) * (c.x - b.x)
-                cross > 0
+                cross(b.x - a.x, b.y - a.y, c.x - b.x, c.y - b.y)
             }
-            return signs.all { it } || signs.none { it }
+            return turns.all { it > 0 } || turns.all { it < 0 }
         }
 
     /** Mean width / mean height of the outline (≈ physical aspect ratio when viewed straight on). */
@@ -73,6 +131,17 @@ data class Quadrilateral(
             )
             require(quad.points.toSet().size == 4) { "Points could not be ordered unambiguously" }
             return quad
+        }
+
+        private fun cross(ax: Double, ay: Double, bx: Double, by: Double): Double = ax * by - ay * bx
+
+        /** Proper crossing of segments p1–p2 and q1–q2 (touching or collinear overlap is not counted). */
+        private fun segmentsCross(p1: PixelPoint, p2: PixelPoint, q1: PixelPoint, q2: PixelPoint): Boolean {
+            val d1 = cross(p2.x - p1.x, p2.y - p1.y, q1.x - p1.x, q1.y - p1.y)
+            val d2 = cross(p2.x - p1.x, p2.y - p1.y, q2.x - p1.x, q2.y - p1.y)
+            val d3 = cross(q2.x - q1.x, q2.y - q1.y, p1.x - q1.x, p1.y - q1.y)
+            val d4 = cross(q2.x - q1.x, q2.y - q1.y, p2.x - q1.x, p2.y - q1.y)
+            return sign(d1) * sign(d2) < 0 && sign(d3) * sign(d4) < 0
         }
     }
 }
