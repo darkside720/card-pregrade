@@ -1,12 +1,10 @@
 package com.cardpregrade.app.ui.calibration
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -27,13 +25,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.cardpregrade.app.AppContainer
-import com.cardpregrade.app.capture.OrientedBitmapLoader
+import com.cardpregrade.app.capture.CaptureBoundaryDetection
 import com.cardpregrade.app.demo.DemoDiagnostics
 import com.cardpregrade.app.ui.components.AppScaffold
 import com.cardpregrade.app.ui.components.CardDiagram
@@ -47,14 +42,16 @@ import com.cardpregrade.core.cv.diagnostics.StageDiagnostics
 import com.cardpregrade.core.model.CardSide
 import com.cardpregrade.core.model.CapturedImage
 import com.cardpregrade.core.model.ScanSession
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Locale
 
 /**
- * Developer calibration screen. Phase 3 shows real accepted captures and their capture-quality
- * measurements. Every card-analysis stage (boundary, correction, centering, crops, defects) is
+ * Developer calibration screen: real accepted captures, their capture-quality measurements, and
+ * the experimental card-boundary detector's raw result on each capture (drawn exactly as returned,
+ * failures included). Later card-analysis stages (correction, centering, crops, defects) are
  * explicitly NOT IMPLEMENTED — no fabricated output is drawn.
  */
 @Composable
@@ -68,7 +65,8 @@ fun CalibrationScreen(container: AppContainer, onBack: () -> Unit) {
     AppScaffold(title = "Developer calibration", screenTag = "screen_calibration", onBack = onBack) { padding ->
         ScrollingContent(padding) {
             Text(
-                "Shows real captures and capture-quality measurements. Card analysis stages are not implemented yet.",
+                "Shows real captures, capture-quality measurements and the experimental card-boundary detector. " +
+                    "Later card-analysis stages are not implemented yet.",
                 style = MaterialTheme.typography.bodyMedium,
             )
             LabeledValue("Card-analysis pipeline", diagnostics.pipelineVersion)
@@ -78,7 +76,7 @@ fun CalibrationScreen(container: AppContainer, onBack: () -> Unit) {
                 }
             }
 
-            SectionTitle("Original accepted capture")
+            SectionTitle("Accepted captures and boundary detection")
             val captures = session?.captures.orEmpty().filter { it.side == side }
             if (captures.isEmpty()) {
                 Text(
@@ -98,21 +96,26 @@ fun CalibrationScreen(container: AppContainer, onBack: () -> Unit) {
 
 @Composable
 private fun CaptureDiagnostics(image: CapturedImage, resolveFile: (String) -> File) {
+    // Keyed on the capture: the working image is decoded and the detector run once per capture,
+    // not on recomposition. Loading runs on IO and detection on Default (CaptureBoundaryDetection).
     // Expanded form of keyed produceState, which AGP 8.7 lint misreports as ProduceStateDoesNotAssignValue.
-    var bitmap by remember { mutableStateOf<ImageBitmap?>(null) }
+    var boundary by remember(image.localUri) { mutableStateOf<CaptureBoundaryState>(CaptureBoundaryState.Loading) }
     LaunchedEffect(image.localUri) {
-        bitmap = withContext(Dispatchers.IO) {
-            runCatching { OrientedBitmapLoader.load(resolveFile(image.localUri), image.orientation, 800)?.asImageBitmap() }.getOrNull()
+        boundary = try {
+            CaptureBoundaryDetection.run(resolveFile(image.localUri), image.orientation)
+                ?.let { CaptureBoundaryState.Ready(it) }
+                ?: CaptureBoundaryState.LoadFailed("the image could not be decoded")
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            // Includes OutOfMemoryError, which the previous runCatching load also absorbed.
+            CaptureBoundaryState.LoadFailed(e.message ?: e.javaClass.simpleName)
         }
     }
     Card(Modifier.fillMaxWidth().testTag("calibration_capture")) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(image.kind.name, style = MaterialTheme.typography.titleSmall)
-            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                bitmap?.let {
-                    Image(it, contentDescription = "Accepted capture ${image.kind}", contentScale = ContentScale.Fit, modifier = Modifier.width(200.dp).aspectRatio(3f / 4f))
-                } ?: Text("Loading…", style = MaterialTheme.typography.bodySmall)
-            }
+            CaptureBoundaryPanel(boundary, contentDescription = "Accepted capture ${image.kind}")
             val (w, h) = image.orientedSize
             LabeledValue("Upright size", "$w × $h px")
             LabeledValue("Stored size / EXIF", "${image.widthPx} × ${image.heightPx} · orientation ${image.orientation.exifValue ?: "none"} (${image.orientation.rotationDegrees}°)")
@@ -140,8 +143,16 @@ private fun StagePanel(stage: StageDiagnostics) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(stage.stage.title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-                Surface(color = MaterialTheme.colorScheme.errorContainer, shape = MaterialTheme.shapes.small) {
-                    Text("NOT IMPLEMENTED", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                val experimental = stage.stage == DiagnosticStage.DETECTED_BOUNDARY
+                Surface(
+                    color = if (experimental) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.errorContainer,
+                    shape = MaterialTheme.shapes.small,
+                ) {
+                    Text(
+                        if (experimental) "EXPERIMENTAL · PER CAPTURE" else "NOT IMPLEMENTED",
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                    )
                 }
             }
             val regions = stage.artifacts.filterIsInstance<DiagnosticArtifact.Regions>().flatMap { it.regions }
